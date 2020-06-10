@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      p {
+        color: blue;
+        cursor: pointer;
+      }
+
+      .red {
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <p id="title">日本文学全集 第37 (石坂洋次郎集)</p>
+      <p class="red">薔薇よ、さよなら 上巻</p>
+    </div>
+    <script>
+      console.info("aaa");
+      //DOMを操作する
+      var e = document.createElement("p");
+      e.textContent = "テスト";
+      document.getElementById("app").appendChild(e);
+
+      //アクションを定義する
+      document.getElementById("title").onclick = function () {
+        let name = prompt("タイトルを入力してください");
+        document.getElementById("title").textContent = "タイトル: " + name;
+      };
+    </script>
+  </body>
+</html>
