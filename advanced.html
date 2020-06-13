@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>知の構造化論：演習アプリ発展</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.materialdesignicons.com/5.3.45/css/materialdesignicons.min.css"
+    />
+    <link rel="stylesheet" href="https://unpkg.com/buefy/dist/buefy.min.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+      .tags {
+        margin-bottom: 0;
+      }
+      .search-tag {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app">
+      <section class="section">
+        <div class="container">
+          <form @submit.prevent="searchKeyword()">
+            <div class="field has-addons">
+              <div class="control is-expanded">
+                <input class="input" type="text" v-model="keyword" />
+              </div>
+              <div class="control">
+                <button type="form" class="button is-info">
+                  検索
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+      <section class="section" v-if="list">
+        <div class="container">
+          <p id="search-top">{{hit}}件見つかりました。</p>
+          <b-pagination
+            v-if="!selected && !selectedTag"
+            :total="hit"
+            :current.sync="page"
+            :per-page="size"
+            @change="pageChange"
+          >
+          </b-pagination>
+          <div v-if="selected">
+            {{selected.title}}に似ている本：
+          </div>
+          <div v-if="selectedTag">
+            <b-tag type="is-dark">{{ndcLabel[selectedTag]}}</b-tag>の本
+          </div>
+          <hr />
+
+          <article class="media" v-for="doc in list">
+            <div class="media-content">
+              <div class="content">
+                <p>
+                  <strong
+                    ><a :href="'https://dl.ndl.go.jp/info:ndljp/pid/'+doc.id"
+                      >{{doc.title}}</a
+                    ></strong
+                  >
+                  <br />
+                  <small
+                    >{{doc.responsibility}}/{{doc.publisher}}({{doc.publsihed}})</small
+                  >
+                  <br />
+                  <b-taglist>
+                    <b-tag
+                      class="search-tag"
+                      v-for="tag in doc.tags"
+                      type="is-dark"
+                      @click.native="searchTag(tag)"
+                      >{{ndcLabel[tag]}}</b-tag
+                    >
+                  </b-taglist>
+                  {{doc.index}}
+                </p>
+              </div>
+            </div>
+            <div class="media-right">
+              <button class="button" @click="searchSimilar(doc)">
+                この本に似た本を探す
+              </button>
+            </div>
+          </article>
+        </div>
+      </section>
+      <b-loading :is-full-page="true" :active.sync="isLoading"></b-loading>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.11/vue.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/buefy/0.8.20/buefy.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue-scrollto"></script>
+    <script src="./script.js"></script>
+
+    <script>
+      var searchUrl =
+        "https://tk2-231-25485.vs.sakura.ne.jp/index-mdbglb/_search";
+      new Vue({
+        el: "#app",
+        data() {
+          return {
+            keyword: "",
+            list: null,
+            hit: 0,
+            page: 1,
+            size: 20,
+            isLoading: false,
+            selected: null,
+            selectedTag: null,
+            ndcLabel: {},
+          };
+        },
+        mounted: async function () {
+          var response = await fetch(
+            "https://raw.githubusercontent.com/vopaldragon/knstr/master/ndc.json"
+          );
+          this.ndcLabel = await response.json();
+        },
+        methods: {
+          pageChange: function (newPage) {
+            this.page = newPage;
+            this.search();
+          },
+          searchKeyword: function () {
+            this.page = 1;
+            this.search();
+          },
+          search: async function () {
+            var from = (this.page - 1) * this.size;
+            var query = {
+              query: { match: { keywords: this.keyword } },
+              from: from,
+              size: this.size,
+            };
+            this.isLoading = true;
+            this.selected = null;
+            this.selectedTag = null;
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(query),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits.map((doc) => doc._source);
+            this.hit = json.hits.total.value;
+            this.isLoading = false;
+          },
+          searchSimilar: async function (d) {
+            this.isLoading = true;
+            this.selected = d;
+            this.selectedTag = null;
+            var query = {
+              query: {
+                script_score: {
+                  query: { match_all: {} },
+                  script: {
+                    source:
+                      "cosineSimilarity(params.query_vector, doc['feature_vector']) + 1.0",
+                    params: { query_vector: d.feature_vector },
+                  },
+                },
+              },
+              size: 20,
+            };
+
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(query),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits
+              .map((doc) => doc._source)
+              .filter((book) => book.id != d.id);
+            this.hit = json.hits.total.value;
+            this.isLoading = false;
+            VueScrollTo.scrollTo("#search-top", 300);
+          },
+          searchTag: async function (tag) {
+            this.isLoading = true;
+            this.selectedTag = tag;
+            this.selected = null;
+            var q = {
+              query: {
+                term: {
+                  tags: tag,
+                },
+              },
+              size: 20,
+            };
+
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(q),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits.map((doc) => doc._source);
+            this.hit = json.hits.total.value;
+            this.isLoading = false;
+            VueScrollTo.scrollTo("#search-top", 300);
+          },
+        },
+      });
+    </script>
+  </body>
+</html>

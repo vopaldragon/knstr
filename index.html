@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>知の構造化論：演習アプリミニマム</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+    <main id="app">
+      <input class="input" type="text" v-model="keyword" />
+      <button class="button is-info" @click="searchKeyword()">
+        検索
+      </button>
+      <hr />
+      <table>
+        <tr v-for="doc in list">
+          <td>{{doc.title}}</td>
+          <td>{{doc.responsibility}}</td>
+          <td>{{doc.publisher}}</td>
+          <td>{{doc.publsihed}}</td>
+          <td>
+            <button v-for="tag in doc.tags" @click="searchTag(tag)">
+              {{tag}}
+            </button>
+          </td>
+          <td>{{doc.index}}</td>
+          <td><button @click="searchSimilar(doc)">似た本を探す</button></td>
+        </tr>
+      </table>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.11/vue.js"></script>
+    <script>
+      var searchUrl =
+        "https://tk2-231-25485.vs.sakura.ne.jp/index-mdbglb/_search";
+
+      new Vue({
+        el: "#app",
+        data() {
+          return {
+            keyword: "",
+            list: null,
+          };
+        },
+        methods: {
+          searchKeyword: async function () {
+            var query = {
+              query: { match: { keywords: this.keyword } },
+            };
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(query),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits.map((doc) => doc._source);
+          },
+          searchSimilar: async function (d) {
+            var query = {
+              query: {
+                script_score: {
+                  query: { match_all: {} },
+                  script: {
+                    source:
+                      "cosineSimilarity(params.query_vector, doc['feature_vector']) + 1.0",
+                    params: { query_vector: d.feature_vector },
+                  },
+                },
+              },
+            };
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(query),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits.map((doc) => doc._source);
+          },
+          searchTag: async function (tag) {
+            var q = {
+              query: {
+                term: {
+                  tags: tag,
+                },
+              },
+            };
+            var response = await fetch(searchUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(q),
+            });
+            var json = await response.json();
+            this.list = json.hits.hits.map((doc) => doc._source);
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
